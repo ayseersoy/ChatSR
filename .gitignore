@@ -1,0 +1,22 @@
+# Derleme klasörleri
+bin/
+obj/
+.vs/
+
+# Kullanıcıya özel ayarlar
+*.user
+*.suo
+
+# Log ve geçici dosyalar
+*.log
+*.db
+*.opendb
+
+# Derlenmiş dosyalar
+*.exe
+*.dll
+*.pdb
+
+# Sistem dosyaları
+.DS_Store
+Thumbs.db
