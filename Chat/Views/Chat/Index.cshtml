@@ -1,0 +1,327 @@
+﻿@model List<Chat.Models.ChatMessage>
+@{
+	var currentUser = ViewBag.CurrentUser as string;
+	var users = ViewBag.Users as List<Chat.Models.User>;
+}
+
+<div class="chat-container">
+
+	<div class="users-panel">
+		<h4>Users</h4>
+		<ul id="usersList">
+			@foreach (var u in users)
+			{
+				if (u.Username == currentUser) continue;
+				<li class="user-item @(u.Username == ViewBag.Receiver ? "active-user" : "")">
+					<a href="/Chat?receiver=@u.Username">@u.Username</a>
+				</li>
+			}
+		</ul>
+	</div>
+
+	<div class="chat-panel">
+		<div id="chatBox">
+			@foreach (var msg in Model)
+			{
+				var isMine = msg.Sender == currentUser;
+				<div class="message @(isMine ? "mine" : "other")">
+					<span><b>@msg.Sender:</b> @msg.Text</span>
+				</div>
+			}
+		</div>
+
+		@if (!string.IsNullOrEmpty(ViewBag.Receiver))
+		{
+			<div class="message-input">
+				<input type="text" id="messageInput" placeholder="Type a message..." />
+				<button type="button" class="send-btn" onclick="sendMessage()">Send</button>
+				<button type="button" class="del-btn-panel" onclick="deleteUserMessages('@ViewBag.Receiver')">Del</button>
+			</div>
+		}
+	</div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/7.0.5/signalr.min.js"></script>
+<script>
+	const currentUser = "@ViewBag.currentuser";
+	const connection = new signalR.HubConnectionBuilder()
+		.withUrl("/chatHub")
+		.build();
+
+	connection.on("ReceiveMessage", (sender, receiver, message) => {
+		if (receiver !== currentUser && sender !== currentUser) return;
+
+		const chatBox = document.getElementById("chatBox");
+		const div = document.createElement("div");
+		div.style.margin = "5px";
+		div.style.textAlign = (sender === currentUser ? "right" : "left");
+		div.innerHTML = `<span style="display:inline-block; padding:8px 12px; border-radius:15px; background-color:${sender === currentUser ? "#4F9CF9" : "#EEE"};"><b>${sender}:</b> ${message}</span>`;
+		chatBox.appendChild(div);
+		chatBox.scrollTop = chatBox.scrollHeight;
+	});
+
+	connection.on("UpdateActiveUsers", (users) => {
+		const list = document.getElementById("usersList");
+		list.innerHTML = "";
+		users.forEach(u => {
+			if (u === currentUser) return;
+			const li = document.createElement("li");
+			li.style.marginBottom = "6px";
+			li.style.listStyle = "none";
+			li.style.padding = "8px 12px";
+			li.style.borderRadius = "8px";
+			li.style.backgroundColor = (u === "@ViewBag.Receiver" ? "deepskyblue" : "#f2f2f2");
+			li.style.color = (u === "@ViewBag.Receiver" ? "white" : "#333");
+			li.style.fontWeight = (u === "@ViewBag.Receiver" ? "bold" : "normal");
+			li.style.transition = "background-color 0.3s";
+			li.style.display = "flex";
+			li.style.justifyContent = "space-between";
+			li.style.alignItems = "center";
+
+			const a = document.createElement("a");
+			a.href = `/Chat?receiver=${u}`;
+			a.textContent = u;
+			a.style.textDecoration = "none";
+			a.style.color = "inherit";
+			li.appendChild(a);
+
+			const btn = document.createElement("button");
+			btn.textContent = "⋮";
+			btn.style.background = "none";
+			btn.style.border = "none";
+			btn.style.cursor = "pointer";
+			btn.onclick = () => deleteUserMessages(u);
+			li.appendChild(btn);
+
+			list.appendChild(li);
+		});
+	});
+
+		// SignalR connection zaten var: connection
+	connection.on("UpdateActiveUsers", (allUsers, onlineUsers) => {
+		const userList = document.getElementById("userList");
+		userList.innerHTML = ""; // Önce temizle
+
+		allUsers.forEach(user => {
+			const li = document.createElement("li");
+			li.textContent = user;
+
+			// Online/offline göstergesi
+			const dot = document.createElement("span");
+			dot.style.display = "inline-block";
+			dot.style.width = "10px";
+			dot.style.height = "10px";
+			dot.style.borderRadius = "50%";
+			dot.style.marginLeft = "5px";
+			dot.style.backgroundColor = onlineUsers.includes(user) ? "green" : "red";
+
+			li.appendChild(dot);
+			userList.appendChild(li);
+		});
+	});
+
+
+	connection.start();
+
+	function sendMessage() {
+		const receiver = "@ViewBag.Receiver";
+		const message = document.getElementById("messageInput").value;
+		if (message.trim() !== "") {
+			connection.invoke("SendMessage", currentUser, receiver, message);
+			document.getElementById("messageInput").value = "";
+		}
+	}
+	window.deleteUserMessages = function(username) {
+		if (!confirm(`"${username}" ile olan tüm mesajları silmek istediğine emin misin?`)) return;
+
+		fetch(`/Chat/DeleteUserMessages`, {
+			method: "POST",
+			credentials: "same-origin",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(username)
+		})
+		.then(res => {
+			if (res.ok) {
+				// UI'yi temizle
+				const chatBox = document.getElementById("chatBox");
+				if (chatBox) chatBox.innerHTML = "";
+
+				// Opsiyonel: kullanıcıya bildirim
+				alert("Mesajlar tamamen silindi!");
+			} else if (res.status === 401) {
+				alert("Yetkisiz işlem. Lütfen giriş yapın.");
+			}
+		})
+		.catch(err => console.error(err));
+	}
+
+		const messageInput = document.getElementById("messageInput");
+	messageInput.addEventListener("keydown", function(event) {
+		if (event.key === "Enter") {
+			event.preventDefault(); // opsiyonel, textarea vs için
+			sendMessage();
+		}
+	});
+</script>
+
+
+<style>
+	.chat-container {
+		display: flex;
+		height: 700px;
+		width: 800px;
+		margin: 50px auto;
+		border: 1px solid #ccc;
+		border-radius: 12px;
+		overflow: hidden;
+		box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+		background-color: #f9f9f9;
+	}
+
+	/* Users paneli */
+	.users-panel {
+		width: 25%;
+		border-right: 1px solid #ccc;
+		padding: 15px;
+		background-color: #f0f0f0;
+	}
+
+		.users-panel h4 {
+			text-align: center;
+			margin-bottom: 15px;
+		}
+
+	/* Users listesi */
+	.user-item {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: 8px;
+		padding: 8px 10px;
+		border-radius: 8px;
+		background-color: #e8e8e8;
+		transition: all 0.3s;
+	}
+
+		.user-item.active-user {
+			background-color: deepskyblue;
+			color: white;
+			font-weight: bold;
+		}
+
+		.user-item a {
+			text-decoration: none;
+			color: inherit;
+		}
+
+		.user-item:hover {
+			background-color: #d0d0d0;
+		}
+
+		/* Kullanıcı üzerindeki del butonu */
+		.user-item .del-btn {
+			background: none;
+			border: none;
+			cursor: pointer;
+			font-size: 16px;
+			color: #444;
+		}
+
+			.user-item .del-btn:hover {
+				color: #000;
+			}
+
+	/* Chat paneli */
+	.chat-panel {
+		width: 75%;
+		display: flex;
+		flex-direction: column;
+		padding: 15px;
+		justify-content: space-between;
+	}
+
+	/* Chat mesajları */
+	#chatBox {
+		flex: 1;
+		overflow-y: auto;
+		margin-bottom: 10px;
+		padding-right: 5px;
+	}
+
+	.message {
+		margin: 5px 0;
+		display: flex;
+	}
+
+		.message span {
+			padding: 8px 12px;
+			border-radius: 15px;
+			max-width: 70%;
+		}
+
+		.message.mine {
+			justify-content: flex-end; /* sağa yasla */
+		}
+
+			.message.mine span {
+				background-color: #4F9CF9; /* kendi mesaj için soft mavi */
+				color: white;
+			}
+
+		.message.other {
+			justify-content: flex-start; /* sola yasla */
+			color: gray
+		}
+
+			.message.other span {
+				background-color: #EEE; /* diğer kullanıcı mesajı açık gri */
+				color: black;
+			}
+
+
+	/* input ve send button */
+	.send-btn {
+		padding: 8px 15px;
+		border-radius: 10px;
+		background-color: #1E3A8A; /* koyu mavi */
+		color: white;
+		border: none;
+		cursor: pointer;
+		transition: background 0.3s;
+	}
+
+		.send-btn:hover {
+			background-color: #3749a1;
+		}
+
+
+	.del-btn-panel {
+		padding: 8px 15px;
+		border-radius: 10px;
+		background-color: #1E3A8A; /* Dark blue */
+		color: white;
+		border: none;
+		cursor: pointer;
+		transition: background 0.3s;
+	}
+
+		.del-btn-panel:hover {
+			background-color: #3749a1;
+		}
+
+	#messageInput {
+		width: 100%;
+		padding: 12px 16px;
+		border: 1px solid #ccc;
+		border-radius: 25px;
+		font-size: 14px;
+		outline: none;
+		transition: all 0.3s ease;
+		box-sizing: border-box;
+	}
+
+		#messageInput:focus {
+			border-color: deepskyblue;
+			box-shadow: 0 0 5px rgba(90, 80, 0, 0);
+		}
+</style>
